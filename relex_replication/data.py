@@ -1,4 +1,4 @@
-"""Config, pinned MATH data, prompt rendering and completion caps."""
+"""Config, pinned data downloads, MATH prompts and completion caps."""
 
 from __future__ import annotations
 
@@ -9,12 +9,35 @@ from functools import cache
 from pathlib import Path
 from urllib.request import urlopen
 
-DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "configs/qwen25_math_1.5b.json"
+CONFIGS = Path(__file__).resolve().parents[1] / "configs"
+DEFAULT_CONFIG = CONFIGS / "qwen25_math_1.5b.json"
 DATA_CACHE = Path.home() / ".cache/relex_replication"
+ENV_NAMES = ("math", "kk", "ifeval", "fc")
 
 
-def load_config(path: Path = DEFAULT_CONFIG) -> dict:
-    return json.loads(Path(path).read_text())
+def merge(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        nested = isinstance(value, dict) and isinstance(merged.get(key), dict)
+        merged[key] = merge(merged[key], value) if nested else value
+    return merged
+
+
+def load_config(path: Path = DEFAULT_CONFIG, env: str = "math") -> dict:
+    """Model config, then configs/envs.json[env], then the model's own envs[env] overrides.
+
+    A config without an `envs` table (the original 1.5B MATH run) is used as is.
+    """
+    config = json.loads(Path(path).read_text())
+    if "envs" not in config:
+        if env != "math":
+            raise ValueError(f"{path} only defines the math environment")
+        return config
+    overrides = config.pop("envs")
+    if env not in overrides:
+        raise ValueError(f"{path} has no {env} run")
+    shared = json.loads((CONFIGS / "envs.json").read_text()).get(env, {})
+    return merge(merge(config, shared), overrides[env])
 
 
 def sha256_file(path: Path) -> str:
@@ -40,6 +63,16 @@ def download_verified(url: str, sha256: str, cache_dir: Path = DATA_CACHE) -> Pa
         raise ValueError(f"{url}: sha256 {observed} != {sha256}")
     partial.replace(destination)
     return destination
+
+
+def hf_file(spec: dict) -> Path:
+    """A pinned Hugging Face dataset file (gated repos need HF_TOKEN), checked by digest."""
+    from huggingface_hub import hf_hub_download
+
+    path = Path(hf_hub_download(spec["repo_id"], spec["file"], repo_type="dataset", revision=spec["revision"]))
+    if (observed := sha256_file(path)) != spec["sha256"]:
+        raise ValueError(f"{spec['repo_id']}/{spec['file']}: sha256 {observed} != {spec['sha256']}")
+    return path
 
 
 def math_parquet(config: dict, split: str) -> Path:

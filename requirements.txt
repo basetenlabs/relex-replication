@@ -15,3 +15,8 @@ sympy
 regex
 pysnooper==1.2.3
 pytest
+# K&K, IFEval and BFCL graders.
+langdetect==1.0.9
+nltk==3.9.2
+absl-py==2.3.1
+immutabledict==4.2.2
