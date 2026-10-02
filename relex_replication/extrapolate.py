@@ -2,9 +2,12 @@
 
 RELEX prefix N -> target T: per tensor, stack FP16 displacements W_t - W_0 for
 t = 1..N, take the uncentered temporal rank-1 factor, fit the coefficients by OLS
-against rows 0..N-1 and evaluate at row T-1.
+against rows 0..N-1 and evaluate at row T-1. --lam rescales the whole predicted
+displacement: W0 + (lam * c_hat(T)) * v1, so lam = 1 is plain RELEX.
 
-First-update scaling: BF16(FP32(W0) + alpha * (FP32(W1) - FP32(W0))).
+First-update scaling: BF16(FP32(W0) + alpha * (FP32(W1) - FP32(W0))). With
+--fp16-delta the update is instead cast-to-FP16-then-subtracted, as in the
+Qwen3 runs: BF16(FP32(W0) + alpha * FP32(FP16(W1) - FP16(W0))).
 """
 
 from __future__ import annotations
@@ -136,7 +139,10 @@ def materialize(base: torch.Tensor, delta: torch.Tensor) -> torch.Tensor:
     return (base.to(torch.float32) + delta.to(torch.float32)).to(torch.bfloat16)
 
 
-def scaled_first_update(base: torch.Tensor, step1: torch.Tensor, alpha: float) -> torch.Tensor:
+def scaled_first_update(base: torch.Tensor, step1: torch.Tensor, alpha: float,
+                        fp16_delta: bool = False) -> torch.Tensor:
+    if fp16_delta:
+        return materialize(base.float(), float(alpha) * (step1.half() - base.half()).float())
     return materialize(base.float(), alpha * (step1.float() - base.float()))
 
 
@@ -151,9 +157,11 @@ def copy_ancillary(base_root: Path, destination: Path) -> None:
 
 
 def build(run: Path, output: Path, *, prefix: int | None = None, alpha: float | None = None,
-          target_step: int = 500) -> None:
+          target_step: int = 500, lam: float = 1.0, fp16_delta: bool = False) -> None:
     if (prefix is None) == (alpha is None):
         raise ValueError("choose exactly one of prefix or alpha")
+    if not math.isfinite(lam) or (lam != 1.0 and prefix is None):
+        raise ValueError("lam must be finite and only rescales a RELEX prefix fit")
     if prefix is not None and prefix < 2:
         raise ValueError("RELEX needs at least two checkpoints")
     if alpha is not None and not math.isfinite(alpha):
@@ -176,7 +184,7 @@ def build(run: Path, output: Path, *, prefix: int | None = None, alpha: float | 
             tensor = torch.empty(shape, dtype=torch.bfloat16)
             if prefix is not None:
                 direction, coefficients = stream_rank1(base, snapshots, name)
-                coefficient = predict_coefficient(coefficients, target_step)
+                coefficient = lam * predict_coefficient(coefficients, target_step)
             for start, end, flat_start, flat_end in blocks(shape):
                 base_block = base.read_block(name, start, end).reshape(-1)
                 if prefix is not None:
@@ -184,7 +192,7 @@ def build(run: Path, output: Path, *, prefix: int | None = None, alpha: float | 
                     weight = materialize(base_block, delta)
                 else:
                     step1 = snapshots[0].read_block(name, start, end).reshape(-1)
-                    weight = scaled_first_update(base_block, step1, alpha)
+                    weight = scaled_first_update(base_block, step1, alpha, fp16_delta)
                 if not torch.isfinite(weight).all():
                     raise ValueError(f"nonfinite weights for {name}")
                 if shape:
@@ -204,8 +212,11 @@ def main(argv: list[str] | None = None) -> None:
     mode.add_argument("--prefix", type=int, help="RELEX from checkpoints 1..PREFIX")
     mode.add_argument("--alpha", type=float, help="scale the first saved update by ALPHA")
     parser.add_argument("--target-step", type=int, default=500, help="RELEX extrapolation step")
+    parser.add_argument("--lam", type=float, default=1.0, help="rescale the RELEX-predicted displacement")
+    parser.add_argument("--fp16-delta", action="store_true", help="--alpha with an FP16-subtracted update (Qwen3)")
     args = parser.parse_args(argv)
-    build(args.run, args.output, prefix=args.prefix, alpha=args.alpha, target_step=args.target_step)
+    build(args.run, args.output, prefix=args.prefix, alpha=args.alpha, target_step=args.target_step,
+          lam=args.lam, fp16_delta=args.fp16_delta)
 
 
 if __name__ == "__main__":
