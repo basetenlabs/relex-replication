@@ -37,3 +37,5 @@ pytest   # CPU tests
 | Raw step 500 | 63.80% |
 | First update, alpha = 1000 | 66.66% |
 | RELEX prefix 2 -> 500 | 66.02% |
+
+Numbers are from our original training run; a retrained run will differ slightly. Alpha was chosen on the test set.
