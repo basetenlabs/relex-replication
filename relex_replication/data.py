@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tempfile
 import warnings
 from functools import cache
 from pathlib import Path
@@ -48,21 +49,33 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download_verified(url: str, sha256: str, cache_dir: Path = DATA_CACHE) -> Path:
+def download_verified(url: str, sha256: str, cache_dir: Path = DATA_CACHE, *, destination: Path | None = None) -> Path:
     """Download once, refusing bytes that differ from the pinned digest."""
-    destination = cache_dir / sha256 / Path(url).name
+    destination = destination or cache_dir / sha256 / Path(url).name
     if destination.exists() and sha256_file(destination) == sha256:
         return destination
     destination.parent.mkdir(parents=True, exist_ok=True)
-    partial = destination.with_suffix(".partial")
-    with urlopen(url, timeout=120) as response, open(partial, "wb") as handle:
-        while chunk := response.read(1 << 23):
-            handle.write(chunk)
-    if (observed := sha256_file(partial)) != sha256:
-        partial.unlink()
-        raise ValueError(f"{url}: sha256 {observed} != {sha256}")
-    partial.replace(destination)
+    # Distributed ranks may miss the cache together. Each publishes only its
+    # own complete, verified download; no rank can rename another's open file.
+    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:
+        partial = Path(handle.name)
+        try:
+            with urlopen(url, timeout=120) as response:
+                while chunk := response.read(1 << 23):
+                    handle.write(chunk)
+            handle.close()
+            if (observed := sha256_file(partial)) != sha256:
+                raise ValueError(f"{url}: sha256 {observed} != {sha256}")
+            partial.replace(destination)
+        finally:
+            partial.unlink(missing_ok=True)
     return destination
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    # splitlines() also splits literal Unicode separators inside JSON strings.
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
 
 
 def hf_file(spec: dict) -> Path:
@@ -91,6 +104,8 @@ def completion_cap(prompt_tokens: int, requested: int, context: int, prompt_limi
     """Native-context cap: min(requested, context - prompt_tokens), never truncating prompts."""
     if not 0 < prompt_tokens <= prompt_limit:
         raise ValueError(f"prompt has {prompt_tokens} tokens; limit is {prompt_limit}")
+    if requested <= 0 or context <= prompt_tokens:
+        raise ValueError("completion budget must be positive and the prompt must leave room in context")
     return min(requested, context - prompt_tokens)
 
 

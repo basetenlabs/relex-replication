@@ -12,6 +12,7 @@ snapshots) and resume/checkpoint-N/ (full Trainer state every 10 steps).
 from __future__ import annotations
 
 import argparse
+import json
 import multiprocessing
 import os
 from collections.abc import Iterator, Mapping
@@ -32,6 +33,40 @@ def parse_steps(spec: str) -> set[int]:
         first, _, last = part.partition("-")
         steps.update(range(int(first), int(last or first) + 1))
     return steps
+
+
+def training_arguments(config: dict, world_size: int) -> dict:
+    training = config["training"]
+    grpo = dict(training["grpo"])
+    per_update = grpo["per_device_train_batch_size"] * world_size
+    if world_size < 1 or training["completions_per_update"] % per_update:
+        raise ValueError(f"{training['completions_per_update']} completions do not split over {world_size} ranks")
+    if world_size % grpo["vllm_tensor_parallel_size"]:
+        raise ValueError("world size must be divisible by vllm_tensor_parallel_size")
+    grpo["gradient_accumulation_steps"] = training["completions_per_update"] // per_update
+    if world_size != training["world_size"]:
+        print(f"warning: world size {world_size} != {training['world_size']} used for the reference run")
+    return grpo
+
+
+def prepare_output(config: dict, env_name: str, world_size: int, output: Path, resume: Path | None) -> None:
+    """Prevent accidental fresh training over a saved trajectory or incompatible resume."""
+    manifest = {"config": config, "env": env_name, "world_size": world_size}
+    path = output / "run.json"
+    if path.exists():
+        if json.loads(path.read_text()) != manifest:
+            raise ValueError("training output belongs to a different recipe; use a new --output")
+    elif output.exists() and any(output.iterdir()):
+        raise ValueError("training output has no run identity; use a new --output")
+    if resume is not None:
+        if not path.exists() or resume.resolve().parent != (output / "resume").resolve():
+            raise ValueError("--resume must be a checkpoint in this run's resume directory")
+        if not (resume / "trainer_state.json").is_file():
+            raise ValueError("--resume has no trainer_state.json")
+    elif any((output / name).exists() for name in ("trajectory", "resume")):
+        raise ValueError("training has already started; use --resume or a new --output")
+    output.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 
 class RestartStableRepeatSampler(Sampler[int]):
@@ -177,9 +212,16 @@ def main(argv: list[str] | None = None) -> None:
     config = load_config(args.config, args.env)
     env = get_env(args.env, config)
     model, data, training = config["model"], config["data"], config["training"]
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    grpo = training_arguments(config, world_size)
+    state = PartialState()
+    if state.is_main_process:
+        prepare_output(config, args.env, world_size, args.output, args.resume)
+    state.wait_for_everyone()
     base_path = args.output / "base_model"
-    with PartialState().local_main_process_first():
-        snapshot_download(repo_id=model["id"], revision=model["revision"], local_dir=base_path)
+    with state.local_main_process_first():
+        snapshot_download(repo_id=model["id"], revision=model["revision"], local_dir=base_path,
+                          allow_patterns=["*.safetensors", "*.json", "*.txt", "*.model", "LICENSE"])
         tokenizer = AutoTokenizer.from_pretrained(base_path, local_files_only=True)
         rows = env.train_rows(config, tokenizer)
     if args.env != "math":
@@ -190,17 +232,6 @@ def main(argv: list[str] | None = None) -> None:
     longest = max(len(ids) for ids in tokenizer(dataset["prompt"], add_special_tokens=False)["input_ids"])
     if longest > data["max_prompt_tokens"]:
         raise ValueError(f"a training prompt has {longest} tokens; limit is {data['max_prompt_tokens']}")
-
-    # Keep 32 prompts x 8 completions per optimizer update on any world size.
-    # Only the config's world size reproduces the original run's data sharding.
-    grpo = dict(training["grpo"])
-    world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    per_update = grpo["per_device_train_batch_size"] * world_size
-    if training["completions_per_update"] % per_update:
-        raise ValueError(f"{training['completions_per_update']} completions do not split over {world_size} ranks")
-    grpo["gradient_accumulation_steps"] = training["completions_per_update"] // per_update
-    if world_size != training["world_size"]:
-        print(f"warning: world size {world_size} != {training['world_size']} used for the reference run")
 
     grpo_config = GRPOConfig(
         output_dir=str(args.output / "resume"),

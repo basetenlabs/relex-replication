@@ -12,7 +12,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .evaluate import read_jsonl
+from .data import read_jsonl
 
 COHORTS = ("heavy_repetition", "cap_without_repetition", "neither")
 
@@ -49,6 +49,9 @@ def compare(base: tuple[list[dict], list[dict]], target: tuple[list[dict], list[
     ids = [row["question_id"] for row in base_scores]
     if ids != [row["question_id"] for row in target_scores]:
         raise ValueError("base and target cover different questions")
+    if len(ids) != len(set(ids)) or any([row["question_id"] for row in rows] != ids
+                                      for rows in (base_gens, target_gens)):
+        raise ValueError("generations and scores must contain the same unique questions in the same order")
     table = {name: dict.fromkeys(
         ("questions", "base_failures", "repairs", "regressions", "net",
          "repairs_target_heavy_repetition", "repairs_target_cap_hit"), 0) for name in COHORTS}

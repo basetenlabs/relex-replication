@@ -14,19 +14,40 @@ from __future__ import annotations
 import argparse
 import json
 import multiprocessing
+import re
 from pathlib import Path
 
-from .data import DEFAULT_CONFIG, ENV_NAMES, completion_cap, load_config
+from .data import DEFAULT_CONFIG, ENV_NAMES, completion_cap, load_config, read_jsonl, sha256_file
 from .envs import get_env
 
 
-def read_jsonl(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text().splitlines()]
+def prepare_output(config: dict, env_name: str, model: str, revision: str | None, output: Path) -> None:
+    """Bind resumable batches to their weights and resolved recipe."""
+    local = Path(model)
+    if local.is_dir():
+        files = sorted(p for p in local.iterdir() if p.suffix in {".safetensors", ".json"})
+        if not any(p.suffix == ".safetensors" for p in files):
+            raise ValueError(f"no safetensors model in {local}")
+        identity = {"path": str(local.resolve()), "files": {p.name: sha256_file(p) for p in files}}
+    else:
+        if not revision or not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+            raise ValueError("Hub evaluation needs --revision with an immutable commit")
+        identity = {"repo_id": model, "revision": revision}
+    manifest = {"config": config, "env": env_name, "model": identity}
+    path = output / "evaluation.json"
+    if path.exists():
+        if json.loads(path.read_text()) != manifest:
+            raise ValueError("evaluation output belongs to different weights or settings; use a new --output")
+    else:
+        if output.exists() and any(output.iterdir()):
+            raise ValueError("evaluation output has no identity; use a new --output")
+        output.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(manifest, indent=2) + "\n")
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
     partial = path.with_suffix(".partial")
-    partial.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
+    partial.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
     partial.replace(path)
 
 
@@ -42,7 +63,14 @@ def generate(config: dict, env_name: str, model: str, revision: str | None, outp
     evaluation = config["evaluation"]
     env = get_env(env_name, config)
     planned = enumerate(batches(env, env.test_rows(config), evaluation["batch_size"]))
-    pending = [(index, batch) for index, batch in planned if not (output / f"batch_{index}.jsonl").exists()]
+    pending = []
+    for index, batch in planned:
+        path = output / f"batch_{index}.jsonl"
+        if path.exists():
+            if [r["question_id"] for r in read_jsonl(path)] != [q["question_id"] for q in batch]:
+                raise ValueError(f"saved batch {index} does not match the planned questions")
+        else:
+            pending.append((index, batch))
     if not pending:
         return
     context = evaluation["context_tokens"]
@@ -61,22 +89,22 @@ def generate(config: dict, env_name: str, model: str, revision: str | None, outp
     )
     tokenizer = llm.get_tokenizer()
     for index, batch in pending:
-        prompt_tokens = [len(tokenizer.encode(q["prompt"], add_special_tokens=False)) for q in batch]
+        token_ids = [tokenizer.encode(q["prompt"], add_special_tokens=False) for q in batch]
+        prompt_tokens = [len(ids) for ids in token_ids]
         caps = [completion_cap(n, evaluation["max_output_tokens"], context, prompt_limit) for n in prompt_tokens]
         params = [SamplingParams(n=1, temperature=0.0, top_p=1.0, top_k=-1, max_tokens=cap, seed=evaluation["seed"])
                   for cap in caps]
-        outputs = llm.generate([q["prompt"] for q in batch], sampling_params=params, use_tqdm=True,
-                               tokenization_kwargs={"add_special_tokens": False})
+        outputs = llm.generate([{"prompt_token_ids": ids} for ids in token_ids], sampling_params=params, use_tqdm=True)
         records = []
-        for question, n_prompt, cap, result in zip(batch, prompt_tokens, caps, outputs, strict=True):
-            if len(result.prompt_token_ids) != n_prompt:
+        for question, ids, cap, result in zip(batch, token_ids, caps, outputs, strict=True):
+            if result.prompt_token_ids != ids or len(result.outputs) != 1:
                 raise RuntimeError(f"vLLM tokenized question {question['question_id']} differently")
             completion = result.outputs[0]
             records.append({
                 "question_id": question["question_id"],
                 "response": completion.text,
                 "finish_reason": completion.finish_reason,
-                "prompt_tokens": n_prompt,
+                "prompt_tokens": len(ids),
                 "output_tokens": len(completion.token_ids),
                 "output_cap": cap,
             })
@@ -89,7 +117,10 @@ def score(config: dict, env_name: str, output: Path) -> dict:
     env = get_env(env_name, config)
     questions = env.test_rows(config)
     files = sorted(output.glob("batch_*.jsonl"), key=lambda p: int(p.stem.split("_")[1]))
-    by_id = {row["question_id"]: row for path in files for row in read_jsonl(path)}
+    records = [row for path in files for row in read_jsonl(path)]
+    by_id = {row["question_id"]: row for row in records}
+    if len(by_id) != len(records):
+        raise RuntimeError("duplicate question IDs in generation batches")
     if set(by_id) != {q["question_id"] for q in questions}:
         raise RuntimeError("generations are incomplete or belong to another question set")
     generations = [by_id[q["question_id"]] for q in questions]
@@ -122,7 +153,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--env", choices=ENV_NAMES, default="math")
     args = parser.parse_args(argv)
     config = load_config(args.config, args.env)
-    args.output.mkdir(parents=True, exist_ok=True)
+    prepare_output(config, args.env, args.model, args.revision, args.output)
     child = multiprocessing.get_context("spawn").Process(
         target=generate, args=(config, args.env, args.model, args.revision, args.output))
     child.start()

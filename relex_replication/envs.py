@@ -18,7 +18,7 @@ from functools import cache
 from pathlib import Path
 
 from . import _vendor  # noqa: F401 - puts upstream top-level packages on sys.path
-from .data import DATA_CACHE, download_verified, hf_file, math_parquet, render_prompt, test_questions
+from .data import DATA_CACHE, download_verified, hf_file, math_parquet, read_jsonl, render_prompt, test_questions
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -198,8 +198,7 @@ class IFEval(JsonTruthEnv):
     def test_rows(self, config: dict) -> list[dict]:
         data = config["data"]
         install_punkt_tab(data["nltk_punkt_tab"])
-        lines = hf_file(data["test"]).read_text(encoding="utf-8").splitlines()
-        rows = [json.loads(line) for line in lines]
+        rows = read_jsonl(hf_file(data["test"]))
         return expect([{"question_id": f"google_ifeval/{r['key']}", "prompt": chatml(r["prompt"]),
                         "ground_truth": {k: r[k] for k in ("key", "prompt", "instruction_id_list", "kwargs")}}
                        for r in rows], data["test"]["rows"], "test rows")
@@ -396,10 +395,7 @@ class FunctionCalling(JsonTruthEnv):
         spec = config["data"]["bfcl"]
         root = DATA_CACHE / "bfcl" / spec["revision"]
         for relative, sha256 in spec["files"].items():
-            target = root / relative
-            if not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(download_verified(spec["url"].format(path=relative), sha256).read_bytes())
+            download_verified(spec["url"].format(path=relative), sha256, destination=root / relative)
         return str(root)
 
     def test_rows(self, config: dict) -> list[dict]:
@@ -407,11 +403,10 @@ class FunctionCalling(JsonTruthEnv):
         functions = bfcl_functions(root)
         rows = []
         for category in BFCL_CATEGORIES:
-            read = lambda path: [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]  # noqa: E731
-            entries = read(f"{root}/data/BFCL_v4_{category}.json")
+            entries = read_jsonl(Path(root) / f"data/BFCL_v4_{category}.json")
             # Upstream aligns gold answers by position; some gold IDs use older names.
             gold = [None] * len(entries) if "relevance" in category else [
-                g["ground_truth"] for g in read(f"{root}/data/possible_answer/BFCL_v4_{category}.json")]
+                g["ground_truth"] for g in read_jsonl(Path(root) / f"data/possible_answer/BFCL_v4_{category}.json")]
             for entry, answer in zip(entries, gold, strict=True):
                 (messages,) = entry["question"]
                 tools = functions["_func_doc_language_specific_pre_processing"](copy.deepcopy(entry["function"]),
@@ -460,11 +455,11 @@ class FunctionCalling(JsonTruthEnv):
         self.overlap = set(config["data"]["bfcl"]["exact_query_overlap"])
 
 
-ENVS = {"math": Math(), "kk": KnightsKnaves(), "ifeval": IFEval(), "fc": FunctionCalling()}
+ENVS = {"math": Math, "kk": KnightsKnaves, "ifeval": IFEval, "fc": FunctionCalling}
 
 
 def get_env(name: str, config: dict):
-    env = ENVS[name]
+    env = ENVS[name]()
     if hasattr(env, "configure"):
         env.configure(config)
     return env

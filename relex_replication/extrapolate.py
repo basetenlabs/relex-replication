@@ -164,6 +164,10 @@ def build(run: Path, output: Path, *, prefix: int | None = None, alpha: float | 
         raise ValueError("lam must be finite and only rescales a RELEX prefix fit")
     if prefix is not None and prefix < 2:
         raise ValueError("RELEX needs at least two checkpoints")
+    if target_step < 1:
+        raise ValueError("target step must be positive")
+    if fp16_delta and alpha is None:
+        raise ValueError("--fp16-delta applies only to --alpha; RELEX always uses FP16 deltas")
     if alpha is not None and not math.isfinite(alpha):
         raise ValueError("alpha must be finite")
     base = TensorStore(run / "base_model")
@@ -201,6 +205,7 @@ def build(run: Path, output: Path, *, prefix: int | None = None, alpha: float | 
                     tensor.copy_(weight.reshape(()))
             tensors[name] = tensor
         save_file(tensors, str(output / shard.name), metadata={"format": "pt"})
+        print(f"wrote {output / shard.name}", flush=True)
     print(f"wrote {output}")
 
 
