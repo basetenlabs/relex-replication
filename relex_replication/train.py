@@ -1,9 +1,9 @@
-"""500-step GRPO on MATH (TRL + colocated vLLM), saving the checkpoints RELEX needs.
+"""500-step GRPO (TRL + colocated vLLM) on one environment, saving the checkpoints RELEX needs.
 
-Launch on 16 GPUs (the original run used 2 nodes x 8 H200), e.g.
+Launch on the config's world size (2 nodes x 8 H200 for 1.5B/4B, 1 node x 8 B200 for 8B), e.g.
     accelerate launch --multi_gpu --num_machines 2 --num_processes 16 --machine_rank R \
         --main_process_ip HOST --mixed_precision bf16 --dynamo_backend no \
-        -m relex_replication.train --output runs/qwen25-math-1.5b
+        -m relex_replication.train --config configs/qwen3_4b.json --env kk --output runs/4b-kk
 
 Writes base_model/ (the pinned base), trajectory/global_step_N/ (model-only
 snapshots) and resume/checkpoint-N/ (full Trainer state every 10 steps).
@@ -14,14 +14,15 @@ from __future__ import annotations
 import argparse
 import multiprocessing
 import os
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
 import torch
 from torch.utils.data import Sampler
 
-from .data import DEFAULT_CONFIG, completion_cap, load_config, math_parquet, render_prompt
+from .data import DEFAULT_CONFIG, ENV_NAMES, completion_cap, load_config
+from .envs import get_env
 
 
 def parse_steps(spec: str) -> set[int]:
@@ -31,14 +32,6 @@ def parse_steps(spec: str) -> set[int]:
         first, _, last = part.partition("-")
         steps.update(range(int(first), int(last or first) + 1))
     return steps
-
-
-def math_reward(completions: Sequence[str], ground_truth: Sequence[Mapping], **_) -> list[float]:
-    """Binary RLVR-Decomposed reward: official boxed-answer extraction vs the target."""
-    from ._vendor.rlvr_math.math import compute_score
-
-    pairs = zip(completions, ground_truth, strict=True)
-    return [float(compute_score(completion, truth)) for completion, truth in pairs]
 
 
 class RestartStableRepeatSampler(Sampler[int]):
@@ -169,6 +162,7 @@ def build_trainer_class(snapshot_steps: set[int], trajectory: Path, data: Mappin
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--env", choices=ENV_NAMES, default="math")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", type=Path, help="resume/checkpoint-N directory to continue from")
     args = parser.parse_args(argv)
@@ -180,31 +174,25 @@ def main(argv: list[str] | None = None) -> None:
     from transformers import AutoTokenizer
     from trl import GRPOConfig
 
-    config = load_config(args.config)
+    config = load_config(args.config, args.env)
+    env = get_env(args.env, config)
     model, data, training = config["model"], config["data"], config["training"]
     base_path = args.output / "base_model"
     with PartialState().local_main_process_first():
         snapshot_download(repo_id=model["id"], revision=model["revision"], local_dir=base_path)
-        train_path = math_parquet(config, "train")
-
-    tokenizer = AutoTokenizer.from_pretrained(base_path, local_files_only=True)
-    dataset = Dataset.from_parquet(str(train_path))
-    if len(dataset) != data["train"]["rows"]:
-        raise ValueError(f"expected {data['train']['rows']} training rows, got {len(dataset)}")
-    dataset = dataset.map(
-        lambda row: {
-            "prompt": render_prompt(data["prompt_template"], row["reward_model"]["ground_truth"]["question"]),
-            "ground_truth": row["reward_model"]["ground_truth"],
-            "source_index": row["extra_info"]["index"],
-        },
-        remove_columns=dataset.column_names,
-    )
+        tokenizer = AutoTokenizer.from_pretrained(base_path, local_files_only=True)
+        rows = env.train_rows(config, tokenizer)
+    if args.env != "math":
+        # As in the original non-MATH runs.
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.padding_side = "left"
+    dataset = Dataset.from_list(rows)
     longest = max(len(ids) for ids in tokenizer(dataset["prompt"], add_special_tokens=False)["input_ids"])
     if longest > data["max_prompt_tokens"]:
         raise ValueError(f"a training prompt has {longest} tokens; limit is {data['max_prompt_tokens']}")
 
     # Keep 32 prompts x 8 completions per optimizer update on any world size.
-    # Only the original world size of 16 reproduces the run's data sharding.
+    # Only the config's world size reproduces the original run's data sharding.
     grpo = dict(training["grpo"])
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     per_update = grpo["per_device_train_batch_size"] * world_size
@@ -225,7 +213,7 @@ def main(argv: list[str] | None = None) -> None:
     with without_fused_allreduce_rms():
         trainer = trainer_class(
             model=str(base_path),
-            reward_funcs=math_reward,
+            reward_funcs=env.reward,
             args=grpo_config,
             train_dataset=dataset,
             processing_class=tokenizer,

@@ -35,12 +35,12 @@ def test_official_grader(response, gold, correct):
 
 
 def test_training_reward_golden_cases():
-    from relex_replication.train import math_reward
+    from relex_replication.envs import Math
 
     cases = [(r"Reasoning. \boxed{2}", "2", 1.0), (r"Reasoning. \boxed{3}", "2", 0.0),
              (r"Reasoning. \boxed{\frac{2}{4}}", r"\frac{2}{4}", 1.0)]
     truths = [{"question": "q", "solution": target, "target": target} for _, target, _ in cases]
-    assert math_reward([c for c, _, _ in cases], truths) == [r for _, _, r in cases]
+    assert Math().reward([c for c, _, _ in cases], truths) == [r for _, _, r in cases]
 
 
 def test_repetition_classifier():
