@@ -43,9 +43,6 @@ Numbers are from our original training run; a retrained run will differ slightly
 
 ## Qwen3 multi-environment runs
 
-`configs/qwen3_4b.json` and `configs/qwen3_8b.json` hold the recipes; `configs/envs.json` holds the pinned
-data and evaluation budget for `kk`, `ifeval` and `fc`. Data is downloaded at run time (xLAM is gated: accept its
-terms on Hugging Face and set `HF_TOKEN`). 4B trains on 2 x 8 H200 like the 1.5B run; 8B on one node of 8 B200.
 
 ```bash
 C=configs/qwen3_4b.json E=kk   # E in math, kk, ifeval, fc (8B: kk, ifeval, fc)
