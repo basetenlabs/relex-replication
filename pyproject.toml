@@ -1,0 +1,17 @@
+[project]
+name = "relex-replication"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.setuptools]
+packages = ["relex_replication"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["relex_replication/_vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
