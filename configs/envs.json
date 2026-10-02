@@ -1,0 +1,166 @@
+{
+  "kk": {
+    "data": {
+      "url": "https://raw.githubusercontent.com/Unakar/Logic-RL/9d2c457525ec14639e85afa12d49bb16efb053a4/data/kk/instruct/{people}ppl/{split}.parquet",
+      "sha256": {
+        "3-train": "3562e95e729ca9b87afc0496bcd0022d0b4714f41d917273f99fc7d473dd4701",
+        "3-test": "0361ec695ae77e6ae11ad2683097a958cd4dfdb64ea965ae9a7929d0b2e9290c",
+        "4-train": "e55481a7d79d6bc80b962492979515b2adf82a19268b1c45b291503a60d2ddff",
+        "4-test": "47d8641333d8946cefafd58ac15dcb7a7924eb5065f483c95743103480414d54",
+        "5-train": "d73d503efc2b87da3394f096dfd5e2501865c7e9319814499266c866998afac0",
+        "5-test": "438550a48e95293f9b7802a4d0e48baa266295700c2bcdb64a3bdc48e3d29bda",
+        "6-train": "24edd3bd45e09fca8fc64a7c2c04a9467faa002864104657ae393846316c978c",
+        "6-test": "9345d9a29507b735f00007e4ad5a50c12c696c4b8100178cdd090113f728d639",
+        "7-train": "18166d884c7d0c6aae33211cfd0d9a426f127f8c9b21dfb6fdc5bd29ceeddfea",
+        "7-test": "6921d865103220e4ba4a672ec2a2c20919d4fae476e7cd3786ade554077188a0"
+      },
+      "people": [
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "train_rows": 4500,
+      "test_exclude": [
+        "3ppl/test/17",
+        "3ppl/test/53"
+      ],
+      "test_rows": 498,
+      "max_prompt_tokens": 2048,
+      "context_tokens": 4096
+    },
+    "evaluation": {
+      "seed": 1,
+      "context_tokens": 4096,
+      "max_output_tokens": 2048,
+      "max_prompt_tokens": 4095,
+      "batch_size": 32,
+      "vllm": {
+        "tensor_parallel_size": 2,
+        "gpu_memory_utilization": 0.6,
+        "enable_prefix_caching": false,
+        "compilation_config": {
+          "pass_config": {
+            "fuse_allreduce_rms": false
+          }
+        }
+      }
+    }
+  },
+  "ifeval": {
+    "data": {
+      "train": {
+        "repo_id": "allenai/RLVR-IFeval",
+        "revision": "47c03c73621c4aab2b824b7818681117d662770e",
+        "file": "data/train-00000-of-00001.parquet",
+        "sha256": "75f1b1f63039044034fe75d22f51f77f257a79291d0084262bb43695d4aac971",
+        "source_rows": 14973,
+        "rows": 14725
+      },
+      "test": {
+        "repo_id": "google/IFEval",
+        "revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
+        "file": "ifeval_input_data.jsonl",
+        "sha256": "6a85310ca8ce15eff755aa08a3a4ff931c7e273e7515ebb3c492ea85fd8288f2",
+        "rows": 541
+      },
+      "nltk_punkt_tab": {
+        "url": "https://raw.githubusercontent.com/nltk/nltk_data/4f15a3d89eefe9748ec1c05be495d91289197155/packages/tokenizers/punkt_tab.zip",
+        "sha256": "e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106"
+      },
+      "max_prompt_tokens": 2048,
+      "context_tokens": 8192
+    },
+    "training": {
+      "grpo": {
+        "max_completion_length": 4096,
+        "vllm_max_model_length": 8192
+      }
+    },
+    "evaluation": {
+      "seed": 1,
+      "context_tokens": 8192,
+      "max_output_tokens": 4096,
+      "max_prompt_tokens": 8191,
+      "batch_size": 32,
+      "vllm": {
+        "tensor_parallel_size": 2,
+        "gpu_memory_utilization": 0.6,
+        "enable_prefix_caching": false,
+        "compilation_config": {
+          "pass_config": {
+            "fuse_allreduce_rms": false
+          }
+        }
+      }
+    }
+  },
+  "fc": {
+    "data": {
+      "train": {
+        "repo_id": "Salesforce/xlam-function-calling-60k",
+        "revision": "26d14ebfe18b1f7b524bd39b404b50af5dc97866",
+        "file": "xlam_function_calling_60k.json",
+        "sha256": "4ef5c6f0dc552f2231f93f5853a9ef431e9e806d7aa514d0f6b615606ce576c6",
+        "source_rows": 60000,
+        "rows": 8457,
+        "indices": "configs/xlam_train_indices.json"
+      },
+      "bfcl": {
+        "revision": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+        "url": "https://raw.githubusercontent.com/ShishirPatil/gorilla/6ea57973c7a6097fd7c5915698c54c17c5b1b6c8/berkeley-function-call-leaderboard/bfcl_eval/{path}",
+        "files": {
+          "utils.py": "3703b9bb63f83581c60b8e0b82aac74c360c9ca781e99e7d4eb28b0cce2285dd",
+          "eval_checker/eval_runner.py": "b1033684908819ccb312d4d0e2c563359d69247412f00206013b2292b0e3ce81",
+          "data/BFCL_v4_irrelevance.json": "2b6ed4c2e992cdcf5f1678a701851f944bef7550ee026ed1ddb89efed5be01a6",
+          "data/BFCL_v4_live_irrelevance.json": "6559fda2beaceb609a2cd2e504c65b4a56cb448e1ef88fddfd199e163d163349",
+          "data/BFCL_v4_live_multiple.json": "fd8ccfad4d911420d0e3341dbe2fff77d1d341da934248b9bb2bda24ab3a10c8",
+          "data/BFCL_v4_live_parallel.json": "6c26e9fdc3350cf596e6d1ea9c179cbff834761bccf562f4141ed29a839ca421",
+          "data/BFCL_v4_live_parallel_multiple.json": "21d4b9319c1faac431e22757b367ea28917fe467364c3a4b17f16ec06d4f6e79",
+          "data/BFCL_v4_live_relevance.json": "e03f9e241657a137cba48a89ee12f47bf3fcb7e4f6274263e9c699a0c974203a",
+          "data/BFCL_v4_live_simple.json": "1af2ac87dca47556db7b7e37e51e28b459a38b594e3c7b3c792b4903598ca0c4",
+          "data/BFCL_v4_multiple.json": "aef168155ebd74b7ac2401198b201343bc7d16d7a3d7e0d4e6d8ee82c6969b2a",
+          "data/BFCL_v4_parallel.json": "19f51a82eff42e5d62541aa500115a056eb78f437c2ba1f10415fd7c8e5dda84",
+          "data/BFCL_v4_parallel_multiple.json": "8863ea8433239f55c5f016154cf0830853c89f693c6ea270396a2fa121960579",
+          "data/BFCL_v4_simple_java.json": "13d2303a125b08754f0e41995b9273b5005fa8ed8ebfaa24ef53b4d83c4b5c6e",
+          "data/BFCL_v4_simple_javascript.json": "329e67fedf79a6243d93dbda4b388d12bd2d31f1f2163d92cb6ef676d1764f44",
+          "data/BFCL_v4_simple_python.json": "82dd63ba502eb2520c6b5d1d9a5c4b590e03ff261565175561f6228a367d1991",
+          "data/possible_answer/BFCL_v4_live_multiple.json": "97e90d59c5bd76c55a2920ce93e5566e9046307d3f558578f085f9d3a56c3084",
+          "data/possible_answer/BFCL_v4_live_parallel.json": "8a9f189ff0e832ebbbbdade1fd95a7dbcc67406e9177df3f0aad76f59ab00350",
+          "data/possible_answer/BFCL_v4_live_parallel_multiple.json": "f5b5f360556c5feb51db46fb9f56ee4b304f4b45b161599bbb14161c98a2873f",
+          "data/possible_answer/BFCL_v4_live_simple.json": "fec9cfa9744a936f9126981e85a2023da1e63e273eafebc81923a1162fad70ce",
+          "data/possible_answer/BFCL_v4_multiple.json": "244e00ce9395df948bcafc7bee64e8f9c87ef70887587d83cae45b13699f3047",
+          "data/possible_answer/BFCL_v4_parallel.json": "8a6aa19c1adddc6a5a2f7e40f9dbf30cc7e95815e7b830c90589ab318229e0f0",
+          "data/possible_answer/BFCL_v4_parallel_multiple.json": "5ebf24f458c1f16300c05505d83d6f0a1b68b79be273a033febd0d4f840507e3",
+          "data/possible_answer/BFCL_v4_simple_java.json": "78f25616084044fa05bbfcee68e03f6ececb222bdd5cb3b7783a675fb3366e35",
+          "data/possible_answer/BFCL_v4_simple_javascript.json": "e2f9f2e51d88e0c8056ffbf1a3dd3d02eb032532d2b5d98c9cc9003385bdd56b",
+          "data/possible_answer/BFCL_v4_simple_python.json": "90cd5bc653690ee8e459b5b3f3fc9458606f7f3fcbf795bb51b7dc581f8c86dc"
+        },
+        "rows": 3641,
+        "exact_query_overlap": [
+          "simple_python_9"
+        ]
+      },
+      "max_prompt_tokens": 2070,
+      "context_tokens": 4096
+    },
+    "evaluation": {
+      "seed": 1,
+      "context_tokens": 8192,
+      "max_output_tokens": 2048,
+      "max_prompt_tokens": 6144,
+      "batch_size": 32,
+      "vllm": {
+        "tensor_parallel_size": 2,
+        "gpu_memory_utilization": 0.6,
+        "enable_prefix_caching": false,
+        "compilation_config": {
+          "pass_config": {
+            "fuse_allreduce_rms": false
+          }
+        }
+      }
+    }
+  }
+}

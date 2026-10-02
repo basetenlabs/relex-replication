@@ -1,0 +1,114 @@
+{
+  "model": {
+    "id": "Qwen/Qwen3-8B-Base",
+    "revision": "49e3418fbbbca6ecbdf9608b4d22e5a407081db4",
+    "dtype": "bfloat16",
+    "attn_implementation": "sdpa"
+  },
+  "training": {
+    "world_size": 8,
+    "completions_per_update": 256,
+    "snapshot_steps": "1-55,100,200,300,400,500",
+    "grpo": {
+      "max_steps": 500,
+      "per_device_train_batch_size": 1,
+      "generation_batch_size": 256,
+      "num_generations": 8,
+      "num_iterations": 1,
+      "learning_rate": 1e-06,
+      "optim": "adamw_torch",
+      "adam_beta1": 0.9,
+      "adam_beta2": 0.999,
+      "adam_epsilon": 1e-08,
+      "weight_decay": 0.0,
+      "max_grad_norm": 1.0,
+      "lr_scheduler_type": "constant",
+      "warmup_steps": 0,
+      "beta": 0.0,
+      "loss_type": "grpo",
+      "scale_rewards": "group",
+      "epsilon": 0.2,
+      "epsilon_high": 0.2,
+      "delta": null,
+      "importance_sampling_level": "token",
+      "entropy_coef": 0.0,
+      "use_adaptive_entropy": false,
+      "use_bias_correction_kl": false,
+      "use_vllm": true,
+      "vllm_mode": "colocate",
+      "vllm_model_impl": "vllm",
+      "vllm_tensor_parallel_size": 2,
+      "vllm_gpu_memory_utilization": 0.15,
+      "vllm_max_model_length": 4096,
+      "vllm_enable_sleep_mode": false,
+      "vllm_importance_sampling_correction": false,
+      "temperature": 1.0,
+      "top_p": 1.0,
+      "top_k": 0,
+      "min_p": null,
+      "repetition_penalty": 1.0,
+      "max_completion_length": 2048,
+      "mask_truncated_completions": false,
+      "off_policy_mask_threshold": null,
+      "top_entropy_quantile": 1.0,
+      "sync_ref_model": false,
+      "bf16": true,
+      "fp16": false,
+      "tf32": false,
+      "gradient_checkpointing": false,
+      "use_liger_kernel": false,
+      "torch_compile": false,
+      "seed": 1,
+      "data_seed": 1,
+      "shuffle_dataset": true,
+      "remove_unused_columns": false,
+      "dataloader_num_workers": 0,
+      "logging_strategy": "steps",
+      "logging_steps": 1,
+      "logging_first_step": true,
+      "logging_nan_inf_filter": false,
+      "report_to": "none",
+      "eval_strategy": "no",
+      "save_strategy": "steps",
+      "save_steps": 10,
+      "save_safetensors": true,
+      "save_only_model": false,
+      "save_total_limit": 2,
+      "ignore_data_skip": false,
+      "ddp_find_unused_parameters": false
+    }
+  },
+  "envs": {
+    "kk": {
+      "training": {
+        "grpo": {
+          "learning_rate": 1e-05
+        }
+      }
+    },
+    "ifeval": {
+      "data": {
+        "context_tokens": 4096
+      },
+      "training": {
+        "grpo": {
+          "max_completion_length": 2048,
+          "vllm_max_model_length": 4096,
+          "learning_rate": 1e-05
+        }
+      },
+      "evaluation": {
+        "context_tokens": 4096,
+        "max_output_tokens": 2048,
+        "max_prompt_tokens": 4095
+      }
+    },
+    "fc": {
+      "training": {
+        "grpo": {
+          "learning_rate": 3e-06
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# Python 3.12: CPU tests, data preparation and checkpoint extrapolation.
+torch==2.10.0
+transformers==4.57.6
+trl==1.11.0
+accelerate==1.13.0
+datasets==5.0.1
+pyarrow==25.0.1
+safetensors
+numpy
+# Official RELEX grader and RLVR-Decomposed reward.
+latex2sympy2==1.9.1
+antlr4-python3-runtime==4.7.2
+sympy
+regex
+pysnooper==1.2.3
+pytest
+# K&K, IFEval and BFCL graders.
+langdetect==1.0.9
+nltk==3.9.2
+absl-py==2.3.1
+immutabledict==4.2.2
