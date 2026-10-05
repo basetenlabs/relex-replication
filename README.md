@@ -5,9 +5,9 @@ Replicates and stress-tests RELEX from [You Only Need Minimal RLVR Training: Ext
 
 ## Setup and training
 
-Run commands from this repository's root. The reference environment is Python **3.12**, Torch 2.10 with
-CUDA 12.9, and `vllm/vllm-openai:v0.19.0` (image digest
-`sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90`).
+Run commands from this repository's root. The setup environment is Python **3.12**, Torch 2.13 with
+CUDA 13.0.3, and `vllm/vllm-openai:v0.28.0` (image digest
+`sha256:61fc8a896b0a4fbbbdc063bc4b0dbc25ce98e02b5050c24aeb7830ac02039b14`).
 Use that image on Linux GPU hosts, then install the requirements. The repository is run directly from
 source; `pip install .` is not the supported setup.
 
@@ -18,7 +18,9 @@ export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 ```
 
 For CPU tests and extrapolation (including on macOS), install `requirements-cpu.txt` instead and run
-`python -m pytest -q`. Training and generation require CUDA GPUs; CPU tests do not validate those paths.
+`python -m pytest -q`. macOS requires version 14 or newer. Training and generation require CUDA GPUs;
+CPU tests do not validate those paths. The original results used Torch 2.10, CUDA 12.9 and vLLM 0.19.0;
+the upgraded GPU environment has not yet been validated against those runs.
 Data and tokenizers download automatically at their pinned revisions. xLAM is gated: accept its terms
 on Hugging Face and set `HF_TOKEN` before function-calling training.
 

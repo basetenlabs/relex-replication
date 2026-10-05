@@ -38,6 +38,8 @@ def parse_steps(spec: str) -> set[int]:
 def training_arguments(config: dict, world_size: int) -> dict:
     training = config["training"]
     grpo = dict(training["grpo"])
+    # Transformers 5 always saves safetensors and removed this argument.
+    grpo.pop("save_safetensors", None)
     per_update = grpo["per_device_train_batch_size"] * world_size
     if world_size < 1 or training["completions_per_update"] % per_update:
         raise ValueError(f"{training['completions_per_update']} completions do not split over {world_size} ranks")
